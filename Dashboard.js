@@ -1,179 +1,364 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { motion } from 'framer-motion';
-import { SkeletonBox, SkeletonText } from '../components/Skeleton';
-import { getUser, getFeatureFlags, hasPermission } from '../js/auth';
+import React, { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { getUser, hasPermission } from "../js/auth";
 
-const chartData = [
-  { time: '10am', visitors: 400 }, { time: '12pm', visitors: 700 },
-  { time: '2pm', visitors: 500 }, { time: '4pm', visitors: 900 },
-  { time: '6pm', visitors: 1100 }, { time: '8pm', visitors: 800 },
-];
-
-const seedAlerts = [
-  { id: 1, branch: 'العليا', type: 'high', label: 'AI', title: 'نشاط غير اعتيادي', time: 'قبل 2 د' },
-  { id: 2, branch: 'النخيل', type: 'med', label: 'OK', title: 'ازدحام متوسط', time: 'قبل 8 د' },
-  { id: 3, branch: 'الملز', type: 'low', label: 'OK', title: 'حركة طبيعية', time: 'قبل 14 د' },
-  { id: 4, branch: 'العليا', type: 'med', label: 'AI', title: 'تغير مفاجئ في التدفق', time: 'قبل 22 د' },
-];
+// ✅ الرسم التفاعلي
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const u = getUser();
-  const flags = getFeatureFlags();
-  const role = u?.role || 'viewer';
+
+  // منع دخول غير المصرّح لهم
+  useEffect(() => {
+    const role = u?.role || "viewer";
+    if (!hasPermission(role, "view_dashboard")) navigate("/");
+  }, [navigate, u]);
 
   const [loading, setLoading] = useState(true);
 
-  const [branch, setBranch] = useState('all');
-  const [priority, setPriority] = useState('all');
-  const [q, setQ] = useState('');
+  // Filters
+  const [branch, setBranch] = useState("all");
+  const [priority, setPriority] = useState("all");
+  const [q, setQ] = useState("");
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 650); // skeleton shimmer
+    const t = setTimeout(() => setLoading(false), 650);
     return () => clearTimeout(t);
   }, []);
 
-  const branches = useMemo(() => {
-    const s = new Set(seedAlerts.map(a => a.branch));
-    return ['all', ...Array.from(s)];
-  }, []);
+  const alerts = useMemo(
+    () => [
+      { id: 1, type: "AI", title: "نشاط غير اعتيادي", branch: "العليا", pr: "high", time: "قبل 2 د" },
+      { id: 2, type: "OK", title: "ازدحام متوسط", branch: "النخيل", pr: "medium", time: "قبل 8 د" },
+      { id: 3, type: "OK", title: "حركة طبيعية", branch: "الملز", pr: "low", time: "قبل 14 د" },
+      { id: 4, type: "AI", title: "تغير مفاجئ في التدفق", branch: "العليا", pr: "medium", time: "قبل 22 د" },
+    ],
+    []
+  );
 
-  const filteredAlerts = useMemo(() => {
-    return seedAlerts
-      .filter(a => branch === 'all' ? true : a.branch === branch)
-      .filter(a => priority === 'all' ? true : a.type === priority)
-      .filter(a => (a.title + ' ' + a.branch).toLowerCase().includes(q.toLowerCase().trim()));
-  }, [branch, priority, q]);
+  // ✅ بيانات الرسم (نفس فكرة الصورة: ساعات + زوار)
+  const chartData = useMemo(
+    () => [
+      { t: "10am", v: 320 },
+      { t: "12pm", v: 650 },
+      { t: "2pm", v: 520 },
+      { t: "4pm", v: 900 },
+      { t: "6pm", v: 1100 },
+      { t: "8pm", v: 960 },
+    ],
+    []
+  );
 
-  const canExport = hasPermission(role, 'export_reports');
+  const branches = useMemo(() => ["العليا", "النخيل", "الملز"], []);
+
+  const filtered = useMemo(() => {
+    return alerts.filter((a) => {
+      const okBranch = branch === "all" || a.branch === branch;
+      const okPr = priority === "all" || a.pr === priority;
+      const okQ =
+        !q.trim() ||
+        `${a.title} ${a.branch} ${a.type}`.toLowerCase().includes(q.trim().toLowerCase());
+      return okBranch && okPr && okQ;
+    });
+  }, [alerts, branch, priority, q]);
+
+  const styles = {
+    topRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 14 },
+    kpi: {
+      padding: 14,
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(255,255,255,0.05)",
+    },
+    kpiLabel: { fontSize: 12, color: "rgba(255,255,255,0.65)" },
+    kpiVal: (tone) => ({
+      fontSize: 22,
+      fontWeight: 900,
+      marginTop: 6,
+      color:
+        tone === "blue"
+          ? "#7EB4FF"
+          : tone === "red"
+          ? "#FF7A7A"
+          : tone === "green"
+          ? "#6EE7B7"
+          : "rgba(255,255,255,0.92)",
+    }),
+
+    main: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" },
+
+    filterBar: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1.2fr",
+      gap: 10,
+      marginTop: 10,
+      marginBottom: 12,
+    },
+    input: {
+      width: "100%",
+      height: 44,
+      borderRadius: 14,
+      padding: "0 14px",
+      outline: "none",
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(255,255,255,0.06)",
+      color: "rgba(255,255,255,0.92)",
+    },
+
+    list: { display: "grid", gap: 12, marginTop: 14 },
+    item: {
+      display: "grid",
+      gridTemplateColumns: "72px 1fr",
+      gap: 14,
+      alignItems: "center",
+      padding: "16px 16px",
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(255,255,255,0.05)",
+    },
+    badge: (t) => ({
+      width: 56,
+      height: 56,
+      borderRadius: 16,
+      display: "grid",
+      placeItems: "center",
+      fontWeight: 900,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: t === "AI" ? "rgba(126,180,255,0.18)" : "rgba(255,255,255,0.06)",
+      color: "rgba(255,255,255,0.92)",
+    }),
+    title: { fontWeight: 900, fontSize: 18, color: "rgba(255,255,255,0.92)" },
+    meta: { fontSize: 13, color: "rgba(255,255,255,0.58)", marginTop: 6 },
+
+    // ✅ كارد الرسم
+    chartCard: {
+      padding: 16,
+      borderRadius: 20,
+      border: "1px solid rgba(255,255,255,0.10)",
+      background: "rgba(255,255,255,0.05)",
+    },
+    chartBox: {
+      marginTop: 14,
+      height: 260,
+      borderRadius: 18,
+      border: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(255,255,255,0.04)",
+      padding: 10,
+    },
+  };
+
+  // ✅ Tooltip مخصص مثل الصورة
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          borderRadius: 14,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "rgba(10,14,24,0.86)",
+          color: "rgba(255,255,255,0.92)",
+          minWidth: 140,
+        }}
+      >
+        <div style={{ fontWeight: 900, marginBottom: 6 }}>{label}</div>
+        <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)" }}>
+          visitors : <span style={{ fontWeight: 900 }}>{payload[0].value}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="page-wrap">
+    <div className="page-wrap">
       <div className="page-head">
-        <div>
-          <h1 className="page-title">لوحة التحكم</h1>
-          <p className="page-sub">
-            {u?.companyName ? `مرحباً ${u.companyName}` : 'تحليلات مكمن الذكية'} •
-            <span className="muted"> الدور: {role}</span>
-          </p>
-        </div>
-
-        <div className="dash-actions">
-          {canExport && (
-            <button className="btn-login btn-ripple">تصدير تقرير</button>
-          )}
-          <button className="btn-register btn-ripple">إنشاء تنبيه تجريبي</button>
-        </div>
+        <h1 className="page-title">لوحة التحكم</h1>
+        <p className="page-sub">بحث + فلاتر + تنبيهات — بشكل مرتب وواضح.</p>
       </div>
 
-      {/* KPI */}
-      <div className="kpi-grid">
-        {loading ? (
-          <>
-            <div className="kpi-card"><SkeletonText lines={2} /><SkeletonBox style={{ height: 44, marginTop: 10 }} /></div>
-            <div className="kpi-card"><SkeletonText lines={2} /><SkeletonBox style={{ height: 44, marginTop: 10 }} /></div>
-            <div className="kpi-card"><SkeletonText lines={2} /><SkeletonBox style={{ height: 44, marginTop: 10 }} /></div>
-          </>
-        ) : (
-          <>
-            <div className="kpi-card">
-              <h3>زوار اليوم</h3>
-              <div className="kpi-value">1,284</div>
-            </div>
-            <div className="kpi-card">
-              <h3>تنبيهات أمنية</h3>
-              <div className="kpi-value kpi-danger">2</div>
-            </div>
-            <div className="kpi-card">
-              <h3>متوسط الانتظار</h3>
-              <div className="kpi-value kpi-ok">4m</div>
-            </div>
-          </>
-        )}
-      </div>
+      <div className="glass-card" style={{ padding: 16 }}>
+        {/* KPI */}
+        <div style={styles.topRow}>
+          <div style={styles.kpi}>
+            <div style={styles.kpiLabel}>زوار اليوم</div>
+            <div style={styles.kpiVal("blue")}>{loading ? "—" : "1,284"}</div>
+          </div>
 
-      {/* Chart */}
-      <div className="chart-card glass-card">
-        {loading ? (
-          <>
-            <SkeletonText lines={2} />
-            <SkeletonBox style={{ height: 290, marginTop: 14 }} />
-          </>
-        ) : (
-          <>
-            <h3 className="card-h">تدفق الزوار لحظياً</h3>
-            <div style={{ height: 340, marginTop: 12 }}>
+          <div style={styles.kpi}>
+            <div style={styles.kpiLabel}>تنبيهات</div>
+            <div style={styles.kpiVal("red")}>{loading ? "—" : alerts.length}</div>
+          </div>
+
+          <div style={styles.kpi}>
+            <div style={styles.kpiLabel}>متوسط الانتظار</div>
+            <div style={styles.kpiVal("green")}>{loading ? "—" : "4m"}</div>
+          </div>
+        </div>
+
+        {/* ✅ الرسم فوق */}
+        <div className="glass-card" style={styles.chartCard}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <h3 className="card-h" style={{ margin: 0 }}>
+                تحليل الزوار لحظياً
+              </h3>
+              <p className="muted" style={{ marginTop: 6 }}>
+                تدفق الزوار خلال اليوم (تفاعلي).
+              </p>
+            </div>
+          </div>
+
+          <div style={styles.chartBox}>
+            {loading ? (
+              <div className="muted" style={{ padding: "18px 4px" }}>
+                جاري تحميل الرسم…
+              </div>
+            ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.10)" />
-                  <XAxis dataKey="time" stroke="rgba(255,255,255,0.65)" />
-                  <YAxis stroke="rgba(255,255,255,0.65)" />
-                  <Tooltip contentStyle={{ background: 'rgba(10,17,32,0.96)', border: '1px solid rgba(99,179,237,0.35)' }} />
-                  <Line type="monotone" dataKey="visitors" stroke="var(--accent-cyan)" strokeWidth={3} />
+                <LineChart data={chartData} margin={{ top: 8, right: 16, left: 6, bottom: 0 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <XAxis dataKey="t" stroke="rgba(255,255,255,0.45)" tickLine={false} axisLine={false} />
+                  <YAxis stroke="rgba(255,255,255,0.45)" tickLine={false} axisLine={false} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ stroke: "rgba(126,180,255,0.35)" }} />
+                  <Line
+                    type="monotone"
+                    dataKey="v"
+                    stroke="#8FB8FF"
+                    strokeWidth={3}
+                    dot={{ r: 5, strokeWidth: 2, stroke: "#CFE0FF", fill: "#8FB8FF" }}
+                    activeDot={{ r: 7 }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
-          </>
-        )}
-      </div>
+            )}
+          </div>
 
-      {/* Alerts module with search + filters */}
-      {flags.alerts && (
-        <div className="glass-card alerts-card">
-          <div className="alerts-head">
-            <div>
-              <h3 className="card-h">التنبيهات</h3>
-              <p className="muted">ابحث وفلتر حسب الفرع والأولوية.</p>
-            </div>
+          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button className="btn-login btn-ripple" onClick={() => navigate("/demo")}>
+              مشاهدة التجربة
+            </button>
+            <button className="btn-register btn-ripple" onClick={() => navigate("/settings")}>
+              الإعدادات
+            </button>
+          </div>
+        </div>
 
-            <div className="filters">
-              <select className="select" value={branch} onChange={(e) => setBranch(e.target.value)}>
-                {branches.map(b => <option key={b} value={b}>{b === 'all' ? 'كل الفروع' : b}</option>)}
+        {/* ✅ تحت الرسم: التنبيهات + نظرة عامة */}
+        <div style={{ marginTop: 14, ...styles.main }}>
+          {/* يمين/يسار حسب CSS عندك - هنا خليتها مثل ما كانت */}
+          <div className="glass-card" style={{ padding: 16 }}>
+            <h3 className="card-h" style={{ margin: 0 }}>
+              التنبيهات
+            </h3>
+            <p className="muted" style={{ marginTop: 6 }}>
+              ابحث وفلتر حسب الفرع والأولوية.
+            </p>
+
+            <div style={styles.filterBar}>
+              <select
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                style={{ ...styles.input, cursor: "pointer" }}
+              >
+                <option value="all">كل الفروع</option>
+                {branches.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
               </select>
 
-              <select className="select" value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
+                style={{ ...styles.input, cursor: "pointer" }}
+              >
                 <option value="all">كل الأولويات</option>
                 <option value="high">عالية</option>
-                <option value="med">متوسطة</option>
+                <option value="medium">متوسطة</option>
                 <option value="low">منخفضة</option>
               </select>
 
               <input
-                className="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="بحث..."
+                style={styles.input}
+                placeholder="بحث… مثال: العليا / AI / ازدحام"
               />
+            </div>
+
+            {loading ? (
+              <div className="muted" style={{ padding: "18px 4px" }}>
+                جاري تحميل التنبيهات…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="muted" style={{ padding: "18px 4px" }}>
+                لا توجد نتائج مطابقة.
+              </div>
+            ) : (
+              <div style={styles.list}>
+                {filtered.map((a) => (
+                  <div key={a.id} style={styles.item}>
+                    <div style={styles.badge(a.type)}>{a.type}</div>
+                    <div>
+                      <div style={styles.title}>
+                        {a.title} - فرع {a.branch}
+                      </div>
+                      <div style={styles.meta}>{a.time}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="glass-card" style={{ padding: 16 }}>
+            <h3 className="card-h" style={{ margin: 0 }}>
+              نظرة عامة
+            </h3>
+            <p className="muted" style={{ marginTop: 6 }}>
+              ملخص سريع لحالة النظام.
+            </p>
+
+            <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+              <div style={styles.item}>
+                <div style={styles.badge("OK")}>📌</div>
+                <div>
+                  <div style={styles.title}>مستوى النشاط</div>
+                  <div style={styles.meta}>{loading ? "—" : "مستقر"}</div>
+                </div>
+              </div>
+
+              <div style={styles.item}>
+                <div style={styles.badge("OK")}>⏱️</div>
+                <div>
+                  <div style={styles.title}>آخر تحديث</div>
+                  <div style={styles.meta}>{loading ? "—" : "منذ دقيقة"}</div>
+                </div>
+              </div>
+
+              <div style={styles.item}>
+                <div style={styles.badge("AI")}>🟢</div>
+                <div>
+                  <div style={styles.title}>وضع النظام</div>
+                  <div style={styles.meta}>{loading ? "—" : "Live"}</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {loading ? (
-            <div className="alerts-list">
-              <div className="alert-row"><SkeletonBox style={{ width: 44, height: 28, borderRadius: 999 }} /><SkeletonBox style={{ height: 18, width: '60%' }} /><SkeletonBox style={{ height: 14, width: 90 }} /></div>
-              <div className="alert-row"><SkeletonBox style={{ width: 44, height: 28, borderRadius: 999 }} /><SkeletonBox style={{ height: 18, width: '45%' }} /><SkeletonBox style={{ height: 14, width: 90 }} /></div>
-              <div className="alert-row"><SkeletonBox style={{ width: 44, height: 28, borderRadius: 999 }} /><SkeletonBox style={{ height: 18, width: '52%' }} /><SkeletonBox style={{ height: 14, width: 90 }} /></div>
-            </div>
-          ) : (
-            <div className="alerts-list">
-              {filteredAlerts.length === 0 ? (
-                <div className="muted">لا توجد نتائج.</div>
-              ) : (
-                filteredAlerts.map(a => (
-                  <div key={a.id} className="alert-row">
-                    <span className={`alert-pill ${a.label === 'OK' ? 'ok' : ''}`}>{a.label}</span>
-                    <div className="alert-main">
-                      <div className="alert-title">{a.title} - فرع {a.branch}</div>
-                      <div className="alert-meta">{a.type === 'high' ? 'أولوية عالية' : a.type === 'med' ? 'أولوية متوسطة' : 'أولوية منخفضة'}</div>
-                    </div>
-                    <div className="alert-time">{a.time}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
         </div>
-      )}
-    </motion.div>
+      </div>
+    </div>
   );
 };
 
